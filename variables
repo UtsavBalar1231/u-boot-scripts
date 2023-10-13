@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2034
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2023 Vicharak Computers LLP
+
+# Date for boot image
+DATE=$(date +"%d.%m.%y")
+export DATE
+
+# Uboot directory path
+export UBOOT_DIR="${SCRIPT_DIR}"/..
+
+# set PS3 prompt
+export PS3="Select device: "

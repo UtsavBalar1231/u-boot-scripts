@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (C) 2023 Vicharak Computers LLP
+
+# shellcheck disable=1090
+source "${SCRIPT_DIR}"/utils
+
+function check_image_build() {
+	local uboot_img, trust_img, loader_img
+	uboot_img="${UBOOT_DIR}/uboot.img"
+	trust_img="${UBOOT_DIR}/trust.img"
+	loader_img="${UBOOT_DIR}/loader.bin"
+
+	if [ ! -f "${uboot_img}" ] || [ ! -f "${trust_img}" ] || [ ! -f "${loader_img}" ]; then
+		exit_with_error "U-Boot build failed!"
+	else
+		print "----------------------------------------------------------------"
+		print "Build successful!"
+		print "----------------------------------------------------------------"
+	fi
+}
+
+function source_toolchain {
+	if [ "$(uname -m)" != "aarch64" ]; then
+		if ! command -v arm-linux-gnueabi-gcc >/dev/null 2>&1; then
+			exit_with_error "arm-linux-gnueabi-gcc not found!"
+		fi
+		if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
+			exit_with_error "aarch64-linux-gnu-gcc not found!"
+		fi
+
+		uboot_args="ARCH=arm \
+			CROSS_COMPILE=aarch64-linux-gnu- \
+			-j$(nproc --all)"
+	else
+		uboot_args="ARCH=arm \
+			-j$(nproc --all)"
+	fi
+
+	export uboot_args
+}
+
+function cleanup() {
+	source_toolchain
+
+	# shellcheck disable=SC2086
+	make ${uboot_args} clean && make ${uboot_args} distclean
+}
+
+function build_config() {
+	if ! is_set "${uboot_args}"; then
+		source_toolchain
+	fi
+
+	cd "${UBOOT_DIR}" || exit
+	# shellcheck disable=SC2086
+	make ${uboot_args} "${DEVICE_DEFCONFIG}"
+	cd - || exit
+}
+
+function build_uboot_deb_package() {
+	dpkg-buildpackage -b -rfakeroot -us -uc -a "${DEVICE_ARCH}"
+
+	deb_files=$(find "${UBOOT_DIR}/.." -maxdepth 1 -name "u-boot-${DEVICE_NAME}*")
+
+	if is_set "${deb_files}"; then
+		for deb_file in ${deb_files}; do
+			mv "${deb_file}" "${UBOOT_DIR}/"
+		done
+	else
+		exit_with_error "Deb package build failed!"
+	fi
+}
+
+function build_ubootdeb() {
+	source_toolchain
+	build_config
+	build_uboot_deb_package
+}
+
+function build_uboot() {
+	source_toolchain
+	build_config
+
+	./make.sh "${DEVICE_NAME}"
+
+	if is_enabled "${DEB_BUILD}"; then
+		build_uboot_deb_package
+	fi
+}
+
+function update_defconfig() {
+	source_toolchain
+
+	# shellcheck disable=SC2086
+	make ${uboot_args} "${DEVICE_DEFCONFIG}"
+
+	# shellcheck disable=SC2086
+	make ${uboot_args} savedefconfig
+
+	mv "${UBOOT_DIR}"/defconfig "${UBOOT_DIR}"/configs/"${DEVICE_DEFCONFIG}"
+	print "----------------------------------------------------------------"
+	print "Updated ${DEVICE_DEFCONFIG} with savedefconfig"
+	print "----------------------------------------------------------------"
+}
+
+function print_info() {
+	if [[ -f "${SCRIPT_DIR}/.device.mk" ]]; then
+		# shellcheck disable=SC1090
+		source "${SCRIPT_DIR}/.device.mk"
+	else
+		lunch_device
+	fi
+
+	print "----------------------------------------------------------------"
+	print "Device Information"
+	print "----------------------------------------------------------------"
+
+	if ! is_set "${DEVICE_DEFCONFIG}"; then
+		DEVICE_MAKEFILE="${DEVICE_NAME}.mk"
+	fi
+
+	print "Device Makefile: ${DEVICE_MAKEFILE}"
+	print "Device Name: ${DEVICE_NAME}"
+	print "Device Defconfig: ${DEVICE_DEFCONFIG}"
+
+	if is_set "${DEVICE_DTB_FILE}"; then
+		print "Device DTB: ${DEVICE_DTB_FILE}"
+	fi
+
+	if is_enabled "${DEB_BUILD}"; then
+		print "Build Debian package: Yes"
+	else
+		print "Build Debian package: No"
+	fi
+
+	usage
+}
+
+function set_device_config() {
+	print "----------------------------------------------------------------"
+	cd "${SCRIPT_DIR}" || exit 1
+	printf "\e[1;32m"
+	select device in *.mk; do
+		DEVICE_MAKEFILE="${device}"
+		break
+	done
+	cd "${SCRIPT_DIR}" || exit 1
+	printf "\e[0m"
+	print "----------------------------------------------------------------"
+}
+
+function check_lunch_device() {
+	if [[ ! -f "${SCRIPT_DIR}/.device.mk" ]]; then
+		lunch_device
+	fi
+}
+
+function lunch_device() {
+	delete_file "${SCRIPT_DIR}/.device.mk"
+
+	set_device_config
+
+	cp "${SCRIPT_DIR}/${DEVICE_MAKEFILE}" "${SCRIPT_DIR}/.device.mk"
+
+	source "${SCRIPT_DIR}/.device.mk"
+
+	if ! is_set "${DEVICE_DEFCONFIG}"; then
+		exit_with_error "Device defconfig not set!"
+	fi
+
+	source_toolchain
+	build_config
+}
