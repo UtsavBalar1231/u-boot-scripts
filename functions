@@ -78,11 +78,30 @@ function build_ubootdeb() {
 	build_uboot_deb_package
 }
 
+function make_bl31() {
+	if [ ! -d "${UBOOT_DIR}/trusted-firmware-a" ]; then
+		git clone --depth=1 https://git.trustedfirmware.org/TF-A/trusted-firmware-a.git/
+	fi
+
+	cd "${UBOOT_DIR}/trusted-firmware-a" || exit
+
+	make realclean -j$(nproc --all)
+	make CROSS_COMPILE=aarch64-linux-gnu- PLAT=rk3399 -j$(nproc --all)
+
+	cd "${UBOOT_DIR}" || exit
+}
+
 function build_uboot() {
 	source_toolchain
 	build_config
 
-	./make.sh "${DEVICE_NAME}"
+	if ! is_enabled "${MAINLINE_BUILD}"; then
+		./make.sh "${DEVICE_NAME}"
+	else
+		make_bl31
+		# shellcheck disable=SC2086
+		BL31=${UBOOT_DIR}/trusted-firmware-a/build/rk3399/release/bl31/bl31.elf make ${uboot_args} all
+	fi
 
 	if is_enabled "${DEB_BUILD}"; then
 		build_uboot_deb_package
@@ -132,6 +151,12 @@ function print_info() {
 		print "Build Debian package: Yes"
 	else
 		print "Build Debian package: No"
+	fi
+
+	if is_enabled "${MAINLINE_BUILD}"; then
+		print "Build Mainline U-Boot: Yes"
+	else
+		print "Build Mainline U-Boot: No"
 	fi
 
 	usage
