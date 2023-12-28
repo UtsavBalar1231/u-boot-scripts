@@ -39,6 +39,12 @@ function source_toolchain {
 
 function cleanup() {
 	source_toolchain
+	if is_enabled "${MAINLINE_BUILD}"; then
+		cd trusted-firmware-a || exit
+		# shellcheck disable=SC2086
+		make realclean && make clean
+		cd - || exit
+	fi
 
 	# shellcheck disable=SC2086
 	make ${uboot_args} clean && make ${uboot_args} distclean
