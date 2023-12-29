@@ -62,7 +62,19 @@ function build_config() {
 }
 
 function build_uboot_deb_package() {
-	dpkg-buildpackage -b -rfakeroot -us -uc -a "${DEVICE_ARCH}"
+	if is_set "${HOST_SYSTEM}" && [ "${HOST_SYSTEM}" != "debian" ]; then
+		exit_with_error "Unsupported OS: ${HOST_SYSTEM}, Disable 'BUILD_DEB' to continue"
+	fi
+
+	if ! command -v dpkg-buildpackage &>/dev/null; then
+		exit_with_error "dpkg-buildpackage not found!"
+	fi
+
+	if [ "$(uname -m)" != "aarch64" ]; then
+		CC=aarch64-linux-gnu-gcc dpkg-buildpackage -b -rfakeroot -us -uc -a "${DEVICE_ARCH}"
+	else
+		dpkg-buildpackage -b -rfakeroot -us -uc
+	fi
 
 	deb_files=$(find "${UBOOT_DIR}/.." -maxdepth 1 -name "u-boot-${DEVICE_NAME}*")
 
@@ -135,6 +147,10 @@ function print_info() {
 	else
 		lunch_device
 	fi
+
+	print "----------------------------------------------------------------"
+	print "Host System: ${HOST_SYSTEM}"
+	print "----------------------------------------------------------------"
 
 	print "----------------------------------------------------------------"
 	print "Device Information"
