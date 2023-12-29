@@ -113,7 +113,7 @@ function build_uboot() {
 	build_config
 
 	if ! is_enabled "${MAINLINE_BUILD}"; then
-		./make.sh "${DEVICE_NAME}"
+		bash "${UBOOT_DIR}"/make.sh "${DEVICE_NAME}"
 	else
 		make_bl31
 		# shellcheck disable=SC2086
